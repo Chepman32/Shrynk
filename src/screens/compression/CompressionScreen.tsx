@@ -1030,7 +1030,7 @@ const styles = StyleSheet.create({
     gap: spacing[2],
   },
   chip: {
-    paddingVertical: spacing[2],
+    paddingVertical: spacing[3],
     paddingHorizontal: spacing[3],
     backgroundColor: colors.surface.primary,
     borderRadius: 20,
