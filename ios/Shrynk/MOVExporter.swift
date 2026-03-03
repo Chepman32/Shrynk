@@ -127,6 +127,19 @@ class MOVExporter: NSObject {
     exportSession.exportAsynchronously {
       switch exportSession.status {
       case .completed:
+        do {
+          try self.verifyQuickTimeContainer(at: outputURL)
+        } catch {
+          DispatchQueue.main.async {
+            reject(
+              "mov_container_invalid",
+              "Exported file is not a QuickTime MOV container.",
+              error
+            )
+          }
+          return
+        }
+
         DispatchQueue.main.async {
           resolve(outputURL.absoluteString)
         }
@@ -183,5 +196,49 @@ class MOVExporter: NSObject {
     }
 
     return URL(fileURLWithPath: sourceUri)
+  }
+
+  private func verifyQuickTimeContainer(at fileURL: URL) throws {
+    let headerSize = 32
+    let handle = try FileHandle(forReadingFrom: fileURL)
+    defer {
+      try? handle.close()
+    }
+
+    guard let headerData = try handle.read(upToCount: headerSize), headerData.count >= 12 else {
+      throw NSError(
+        domain: "MOVExporter",
+        code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "Output header is too short."]
+      )
+    }
+
+    let ftypBytes = Data("ftyp".utf8)
+    guard let ftypRange = headerData.range(of: ftypBytes) else {
+      throw NSError(
+        domain: "MOVExporter",
+        code: 2,
+        userInfo: [NSLocalizedDescriptionKey: "Missing ftyp atom in output file."]
+      )
+    }
+
+    let brandStart = ftypRange.upperBound
+    let brandEnd = brandStart + 4
+    guard brandEnd <= headerData.count else {
+      throw NSError(
+        domain: "MOVExporter",
+        code: 3,
+        userInfo: [NSLocalizedDescriptionKey: "Missing major brand in output file."]
+      )
+    }
+
+    let brandData = headerData.subdata(in: brandStart ..< brandEnd)
+    guard let majorBrand = String(data: brandData, encoding: .ascii), majorBrand == "qt  " else {
+      throw NSError(
+        domain: "MOVExporter",
+        code: 4,
+        userInfo: [NSLocalizedDescriptionKey: "Output major brand is not QuickTime."]
+      )
+    }
   }
 }

@@ -73,6 +73,8 @@ const toAbsolutePath = (fileUri: string): string => {
   return fileUri.replace(/^file:\/\//, '');
 };
 
+const APP_COMPRESSED_DIR = `${RNFS.DocumentDirectoryPath}/shrynk/compressed`;
+
 const IOS_MOV_PRESET_BY_RESOLUTION: Record<Resolution, string> = {
   '480p': 'AVAssetExportPreset640x480',
   '720p': 'AVAssetExportPreset1280x720',
@@ -339,33 +341,44 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
         outputUri = compressedUri;
       }
 
-      const savedResult = await saveVideo(outputUri, { type: 'video' });
-      const savedUri =
-        typeof savedResult === 'string'
-          ? savedResult
-          : savedResult?.node?.image?.uri ?? outputUri;
-
-      const statPath = toAbsolutePath(outputUri);
-      const compressedStats = await RNFS.stat(statPath);
-      const compressedSize = Number(compressedStats.size ?? 0);
-
-      if (compressedUri && outputUri !== compressedUri) {
-        const intermediatePath = toAbsolutePath(compressedUri);
-        if (await RNFS.exists(intermediatePath)) {
-          await RNFS.unlink(intermediatePath);
-        }
-      }
-
       const sourceName = selectedVideoName;
       const normalizedName = sourceName.replace(/\.[^/.]+$/, '');
       const fileName = `${normalizedName}_${videoId}.${format}`;
+
+      await RNFS.mkdir(APP_COMPRESSED_DIR);
+      const persistentOutputPath = `${APP_COMPRESSED_DIR}/${fileName}`;
+
+      if (await RNFS.exists(persistentOutputPath)) {
+        await RNFS.unlink(persistentOutputPath);
+      }
+
+      await RNFS.copyFile(toAbsolutePath(outputUri), persistentOutputPath);
+      const persistentOutputUri = toFileUri(persistentOutputPath);
+
+      await saveVideo(persistentOutputUri, { type: 'video' });
+
+      const statPath = persistentOutputPath;
+      const compressedStats = await RNFS.stat(statPath);
+      const compressedSize = Number(compressedStats.size ?? 0);
+
+      const temporaryOutputPath = toAbsolutePath(outputUri);
+      if (temporaryOutputPath !== persistentOutputPath && await RNFS.exists(temporaryOutputPath)) {
+        await RNFS.unlink(temporaryOutputPath);
+      }
+
+      if (compressedUri && outputUri !== compressedUri) {
+        const intermediatePath = toAbsolutePath(compressedUri);
+        if (intermediatePath !== persistentOutputPath && await RNFS.exists(intermediatePath)) {
+          await RNFS.unlink(intermediatePath);
+        }
+      }
 
       const originalSize = originalSizeBytes || compressedSize;
       const ratio = originalSize > 0 ? compressedSize / originalSize : 1;
 
       addHistoryRecord({
         originalUri: videoUri,
-        compressedUri: savedUri,
+        compressedUri: persistentOutputUri,
         thumbnailUri: '',
         fileName,
         originalSize,
@@ -383,7 +396,9 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
       setConversionProgress(1);
       Alert.alert(
         'Conversion Complete',
-        `Saved to gallery.\nOutput size: ${formatBytes(compressedSize)}`
+        format === 'mov'
+          ? `Saved to gallery as .MOV (container).\nCodec may display as H.264.\nOutput size: ${formatBytes(compressedSize)}`
+          : `Saved to gallery.\nOutput size: ${formatBytes(compressedSize)}`
       );
       navigation.goBack();
     } catch (error) {
