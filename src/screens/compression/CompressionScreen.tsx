@@ -1,14 +1,26 @@
 import React, { useMemo, useState } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+  Platform,
+  PermissionsAndroid,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import LinearGradient from 'react-native-linear-gradient';
+import RNFS from 'react-native-fs';
 import { Icon } from '../../components/common/Icon';
 import { colors, spacing, textStyles, layout, shadows } from '../../theme';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../types/navigation';
 import type { Resolution, VideoFormat } from '../../types/compression';
 import { formatBytes } from '../../utils/formatters';
+import { useHistoryStore } from '../../store/useHistoryStore';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Compression'>;
 
@@ -41,10 +53,13 @@ const FORMAT_SIZE_FACTORS: Record<VideoFormat, number> = {
 };
 
 export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
-  const { videoUri, originalSizeBytes } = route.params;
+  const { videoUri, videoId, originalSizeBytes } = route.params;
+  const addHistoryRecord = useHistoryStore(state => state.addRecord);
 
   const [format, setFormat] = useState<VideoFormat>('mp4');
   const [resolution, setResolution] = useState<Resolution>('original');
+  const [isConverting, setIsConverting] = useState(false);
+  const [conversionProgress, setConversionProgress] = useState(0);
 
   const selectedResolutionLabel = useMemo(() => {
     return RESOLUTION_OPTIONS.find(option => option.value === resolution)?.label ?? 'Original';
@@ -104,18 +119,150 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
     return 'Same size';
   }, [estimatedSizeBytes, originalSizeBytes]);
 
-  const handleStartCompression = () => {
-    // TODO: Implement actual compression logic
-    Alert.alert(
-      'Conversion Started',
-      `Format: ${format.toUpperCase()}\nResolution: ${selectedResolutionLabel}\nEstimated Size: ${estimatedSizeText}`,
-      [
+  const handleStartCompression = async () => {
+    if (isConverting) {
+      return;
+    }
+
+    const ensureAndroidGalleryPermission = async () => {
+      if (Platform.OS !== 'android') {
+        return true;
+      }
+
+      const apiLevel = Number(Platform.Version);
+      const permission =
+        apiLevel >= 33
+          ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO
+          : PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
+
+      const granted = await PermissionsAndroid.request(permission);
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    };
+
+    try {
+      const permissionGranted = await ensureAndroidGalleryPermission();
+      if (!permissionGranted) {
+        Alert.alert('Permission Required', 'Please allow media access to save video to gallery.');
+        return;
+      }
+
+      setIsConverting(true);
+      setConversionProgress(0);
+
+      const maxSize = (() => {
+        switch (resolution) {
+          case '480p':
+            return 854;
+          case '720p':
+            return 1280;
+          case '1080p':
+            return 1920;
+          case '4k':
+            return 3840;
+          case 'original':
+          default:
+            return undefined;
+        }
+      })();
+
+      let compressVideo: (
+        uri: string,
+        options: Record<string, unknown>,
+        onProgress?: (progress: number) => void
+      ) => Promise<string>;
+      let saveVideo: (uri: string, options: { type: 'video' }) => Promise<string>;
+
+      try {
+        const compressorModule = require('react-native-compressor') as {
+          Video?: { compress?: typeof compressVideo };
+        };
+        const cameraRollModule = require('@react-native-camera-roll/camera-roll') as {
+          CameraRoll?: {
+            save?: typeof saveVideo;
+            saveAsset?: typeof saveVideo;
+          };
+        };
+
+        if (!compressorModule.Video?.compress || !cameraRollModule.CameraRoll) {
+          throw new Error('Native modules are unavailable');
+        }
+
+        compressVideo = compressorModule.Video.compress;
+        if (cameraRollModule.CameraRoll.saveAsset) {
+          saveVideo = cameraRollModule.CameraRoll.saveAsset;
+        } else if (cameraRollModule.CameraRoll.save) {
+          saveVideo = cameraRollModule.CameraRoll.save.bind(cameraRollModule.CameraRoll);
+        } else {
+          throw new Error('CameraRoll save API is unavailable');
+        }
+      } catch {
+        throw new Error(
+          'Native modules are not linked in the installed app binary. Rebuild the iOS app and try again.'
+        );
+      }
+
+      const compressedRawPath = await compressVideo(
+        videoUri,
         {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
+          compressionMethod: 'manual',
+          maxSize,
+          bitrate: undefined,
+          minimumFileSizeForCompress: 0,
         },
-      ]
-    );
+        (progress: number) => {
+          setConversionProgress(Math.min(1, Math.max(0, progress)));
+        }
+      );
+
+      const compressedUri = compressedRawPath.startsWith('file://')
+        ? compressedRawPath
+        : `file://${compressedRawPath}`;
+
+      const savedUri = await saveVideo(compressedUri, { type: 'video' });
+
+      const statPath = compressedUri.replace(/^file:\/\//, '');
+      const compressedStats = await RNFS.stat(statPath);
+      const compressedSize = Number(compressedStats.size ?? 0);
+
+      const sourceName = selectedVideoName;
+      const normalizedName = sourceName.replace(/\.[^/.]+$/, '');
+      const fileName = `${normalizedName}_${videoId}.${format}`;
+
+      const originalSize = originalSizeBytes || compressedSize;
+      const ratio = originalSize > 0 ? compressedSize / originalSize : 1;
+
+      addHistoryRecord({
+        originalUri: videoUri,
+        compressedUri: savedUri,
+        thumbnailUri: '',
+        fileName,
+        originalSize,
+        compressedSize,
+        compressionRatio: ratio,
+        options: {
+          quality: 'medium',
+          resolution,
+          format,
+          codec: 'h264',
+        },
+        status: 'completed',
+      });
+
+      setConversionProgress(1);
+      Alert.alert(
+        'Conversion Complete',
+        `Saved to gallery.\nOutput size: ${formatBytes(compressedSize)}`
+      );
+      navigation.goBack();
+    } catch (error) {
+      console.error('Compression error:', error);
+      Alert.alert(
+        'Conversion Failed',
+        error instanceof Error ? error.message : 'Unable to convert video.'
+      );
+    } finally {
+      setIsConverting(false);
+    }
   };
   
   return (
@@ -229,9 +376,21 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
 
       {/* Bottom Action */}
       <View style={styles.bottomAction}>
+        {isConverting && (
+          <View style={styles.progressBlock}>
+            <View style={styles.progressHeader}>
+              <Text style={styles.progressTitle}>Converting...</Text>
+              <Text style={styles.progressPercent}>{Math.round(conversionProgress * 100)}%</Text>
+            </View>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${conversionProgress * 100}%` }]} />
+            </View>
+          </View>
+        )}
         <TouchableOpacity
-          style={styles.startButton}
+          style={[styles.startButton, isConverting && styles.startButtonDisabled]}
           onPress={handleStartCompression}
+          disabled={isConverting}
         >
           <LinearGradient
             colors={colors.gradients.primary}
@@ -239,8 +398,14 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
           >
-            <Icon name="play" set="Feather" size={24} color="#FFFFFF" />
-            <Text style={styles.startButtonText}>Start Conversion</Text>
+            {isConverting ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Icon name="play" set="Feather" size={24} color="#FFFFFF" />
+            )}
+            <Text style={styles.startButtonText}>
+              {isConverting ? 'Converting...' : 'Start Conversion'}
+            </Text>
           </LinearGradient>
         </TouchableOpacity>
       </View>
@@ -376,10 +541,49 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border.subtle,
   },
+  progressBlock: {
+    marginBottom: spacing[3],
+    padding: spacing[3],
+    backgroundColor: colors.surface.primary,
+    borderRadius: layout.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    gap: spacing[2],
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  progressTitle: {
+    ...textStyles.bodyMedium,
+    color: colors.text.primary,
+    fontWeight: '600',
+  },
+  progressPercent: {
+    ...textStyles.bodySmall,
+    color: colors.primary[500],
+    fontWeight: '600',
+  },
+  progressTrack: {
+    width: '100%',
+    height: 8,
+    borderRadius: 6,
+    backgroundColor: colors.surface.secondary,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 6,
+    backgroundColor: colors.primary[500],
+  },
   startButton: {
     borderRadius: layout.borderRadius.xl,
     overflow: 'hidden',
     ...shadows.lg,
+  },
+  startButtonDisabled: {
+    opacity: 0.8,
   },
   startButtonGradient: {
     flexDirection: 'row',
