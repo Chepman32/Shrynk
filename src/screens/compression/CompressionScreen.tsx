@@ -19,6 +19,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import LinearGradient from 'react-native-linear-gradient';
+import Video from 'react-native-video';
 import RNFS from 'react-native-fs';
 import { Icon } from '../../components/common/Icon';
 import { colors, spacing, textStyles, layout, shadows } from '../../theme';
@@ -822,13 +823,16 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
           entering={FadeInDown.delay(100).springify()}
           style={styles.previewCard}
         >
-          <View style={styles.previewPlaceholder}>
-            <Icon name="video" set="Feather" size={48} color={colors.primary[500]} />
-            <Text style={styles.previewText}>Selected Video</Text>
-            <Text numberOfLines={1} style={styles.previewSubtext}>
-              {selectedVideoName}
-            </Text>
-          </View>
+          <Video
+            source={{ uri: videoUri }}
+            style={styles.previewVideo}
+            paused={true}
+            resizeMode="cover"
+            muted={true}
+          />
+          <Text numberOfLines={1} style={styles.previewVideoName}>
+            {selectedVideoName}
+          </Text>
         </Animated.View>
 
         {/* Format Selection */}
@@ -987,22 +991,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface.primary,
     ...shadows.md,
   },
-  previewPlaceholder: {
+  previewVideo: {
     height: 200,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.surface.secondary,
+    width: '100%',
   },
-  previewText: {
-    ...textStyles.bodyMedium,
-    color: colors.text.secondary,
-    marginTop: spacing[2],
-  },
-  previewSubtext: {
+  previewVideoName: {
     ...textStyles.bodySmall,
     color: colors.text.tertiary,
-    marginTop: spacing[1],
-    maxWidth: '90%',
+    marginTop: spacing[2],
+    marginHorizontal: spacing[4],
+    marginBottom: spacing[3],
   },
   section: {
     marginBottom: spacing[6],
