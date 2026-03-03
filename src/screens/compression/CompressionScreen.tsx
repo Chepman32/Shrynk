@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -12,7 +12,12 @@ import {
   PermissionsAndroid,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, {
+  FadeInDown,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from 'react-native-reanimated';
 import LinearGradient from 'react-native-linear-gradient';
 import RNFS from 'react-native-fs';
 import { Icon } from '../../components/common/Icon';
@@ -142,6 +147,57 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
   const [resolution, setResolution] = useState<Resolution>('original');
   const [isConverting, setIsConverting] = useState(false);
   const [conversionProgress, setConversionProgress] = useState(0);
+
+  // Animated chip background
+  const chipLayouts = useRef<Record<string, { x: number; width: number }>>({});
+  const chipX = useSharedValue(0);
+  const chipWidth = useSharedValue(0);
+  const [chipBgReady, setChipBgReady] = useState(false);
+
+  const springConfig = { damping: 18, stiffness: 180, mass: 0.8 };
+
+  const chipBgStyle = useAnimatedStyle(() => ({
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    height: '100%',
+    width: chipWidth.value,
+    transform: [{ translateX: chipX.value }],
+    backgroundColor: colors.surface.secondary,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: colors.primary[500],
+  }));
+
+  const handleChipLayout = useCallback(
+    (value: string, event: { nativeEvent: { layout: { x: number; width: number } } }) => {
+      const { x, width } = event.nativeEvent.layout;
+      chipLayouts.current[value] = { x, width };
+      if (value === resolution) {
+        if (!chipBgReady) {
+          chipX.value = x;
+          chipWidth.value = width;
+          setChipBgReady(true);
+        } else {
+          chipX.value = withSpring(x, springConfig);
+          chipWidth.value = withSpring(width, springConfig);
+        }
+      }
+    },
+    [resolution, chipBgReady, chipX, chipWidth],
+  );
+
+  const handleChipPress = useCallback(
+    (value: Resolution) => {
+      setResolution(value);
+      const layout = chipLayouts.current[value];
+      if (layout) {
+        chipX.value = withSpring(layout.x, springConfig);
+        chipWidth.value = withSpring(layout.width, springConfig);
+      }
+    },
+    [chipX, chipWidth],
+  );
 
   const selectedResolutionLabel = useMemo(() => {
     return RESOLUTION_OPTIONS.find(option => option.value === resolution)?.label ?? 'Original';
@@ -817,14 +873,17 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
         >
           <Text style={styles.sectionTitle}>Resolution</Text>
           <View style={styles.chipRow}>
+            {chipBgReady && <Animated.View style={chipBgStyle} />}
             {RESOLUTION_OPTIONS.map((option) => (
               <TouchableOpacity
                 key={option.value}
+                activeOpacity={0.7}
                 style={[
                   styles.chip,
-                  resolution === option.value && styles.chipSelected,
+                  resolution === option.value && styles.chipSelectedText,
                 ]}
-                onPress={() => setResolution(option.value)}
+                onLayout={(e) => handleChipLayout(option.value, e)}
+                onPress={() => handleChipPress(option.value)}
               >
                 <Text style={[
                   styles.chipLabel,
@@ -1037,9 +1096,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  chipSelected: {
-    borderColor: colors.primary[500],
-    backgroundColor: colors.surface.secondary,
+  chipSelectedText: {
+    // background/border handled by animated overlay
   },
   chipLabel: {
     ...textStyles.bodyMedium,
