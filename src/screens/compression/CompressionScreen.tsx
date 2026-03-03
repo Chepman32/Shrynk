@@ -1085,10 +1085,11 @@ const styles = StyleSheet.create({
   },
   chipRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing[2],
   },
   chip: {
+    flexGrow: 1,
+    alignItems: 'center',
     paddingVertical: spacing[3],
     paddingHorizontal: spacing[3],
     backgroundColor: colors.surface.primary,
