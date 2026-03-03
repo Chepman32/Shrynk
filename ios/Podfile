@@ -16,6 +16,8 @@ if linkage != nil
 end
 
 target 'Shrynk' do
+  pod 'ffmpeg-kit-ios-https', :podspec => File.join(__dir__, 'Podspecs/ffmpeg-kit-ios-https.podspec.json')
+
   config = use_native_modules!
 
   use_react_native!(

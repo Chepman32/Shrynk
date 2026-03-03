@@ -11,6 +11,13 @@ PODS:
     - React-Core (= 0.73.6)
     - React-jsi (= 0.73.6)
     - ReactCommon/turbomodule/core (= 0.73.6)
+  - ffmpeg-kit-ios-https (6.0)
+  - ffmpeg-kit-react-native (6.0.2):
+    - ffmpeg-kit-react-native/https (= 6.0.2)
+    - React-Core
+  - ffmpeg-kit-react-native/https (6.0.2):
+    - ffmpeg-kit-ios-https (= 6.0)
+    - React-Core
   - fmt (6.2.1)
   - glog (0.3.5)
   - hermes-engine (0.73.6):
@@ -1166,6 +1173,8 @@ DEPENDENCIES:
   - DoubleConversion (from `../node_modules/react-native/third-party-podspecs/DoubleConversion.podspec`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
   - FBReactNativeSpec (from `../node_modules/react-native/React/FBReactNativeSpec`)
+  - ffmpeg-kit-ios-https (from `/Users/antonchepur/Shrynk/ios/Podspecs/ffmpeg-kit-ios-https.podspec.json`)
+  - ffmpeg-kit-react-native (from `../node_modules/ffmpeg-kit-react-native`)
   - glog (from `../node_modules/react-native/third-party-podspecs/glog.podspec`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
   - libevent (~> 2.1.12)
@@ -1251,6 +1260,10 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/Libraries/FBLazyVector"
   FBReactNativeSpec:
     :path: "../node_modules/react-native/React/FBReactNativeSpec"
+  ffmpeg-kit-ios-https:
+    :podspec: "/Users/antonchepur/Shrynk/ios/Podspecs/ffmpeg-kit-ios-https.podspec.json"
+  ffmpeg-kit-react-native:
+    :path: "../node_modules/ffmpeg-kit-react-native"
   glog:
     :podspec: "../node_modules/react-native/third-party-podspecs/glog.podspec"
   hermes-engine:
@@ -1377,6 +1390,8 @@ SPEC CHECKSUMS:
   DoubleConversion: fea03f2699887d960129cc54bba7e52542b6f953
   FBLazyVector: f64d1e2ea739b4d8f7e4740cde18089cd97fe864
   FBReactNativeSpec: 9f2b8b243131565335437dba74923a8d3015e780
+  ffmpeg-kit-ios-https: 1b5b6238a8ed01f53e017166f9aaf078003feadb
+  ffmpeg-kit-react-native: 221a7286e4acf78e8d92f679194603ef95de9925
   fmt: ff9d55029c625d3757ed641535fd4a75fedc7ce9
   glog: c5d68082e772fa1c511173d6b30a9de2c05a69a2
   hermes-engine: 9cecf9953a681df7556b8cc9c74905de8f3293c0
@@ -1445,6 +1460,6 @@ SPEC CHECKSUMS:
   SocketRocket: f32cd54efbe0f095c4d7594881e52619cfe80b17
   Yoga: 805bf71192903b20fc14babe48080582fee65a80
 
-PODFILE CHECKSUM: ba313ec157dedddb8a275175ae961309a59a74fb
+PODFILE CHECKSUM: ab0e951d6abddaddca5c7b98ccb700a07907274c
 
 COCOAPODS: 1.16.2

@@ -33,7 +33,12 @@ const FORMAT_OPTIONS: { value: VideoFormat; label: string; description: string; 
     description: Platform.OS === 'ios' ? 'QuickTime (Apple)' : 'iOS only',
     supported: Platform.OS === 'ios',
   },
-  { value: 'mkv', label: 'MKV', description: 'Coming soon', supported: false },
+  {
+    value: 'mkv',
+    label: 'MKV',
+    description: Platform.OS === 'ios' ? 'Matroska (saved in app)' : 'Matroska',
+    supported: true,
+  },
 ];
 
 const RESOLUTION_OPTIONS: { value: Resolution; label: string }[] = [
@@ -63,6 +68,20 @@ type MovExporterModule = {
   compressToMov: (sourceUri: string, presetName: string) => Promise<string>;
 };
 
+type FFmpegSessionLike = {
+  getReturnCode: () => Promise<unknown>;
+  getOutput: () => Promise<string>;
+};
+
+type FFmpegKitModule = {
+  FFmpegKit?: {
+    executeWithArguments?: (commandArguments: string[]) => Promise<FFmpegSessionLike>;
+  };
+  ReturnCode?: {
+    isSuccess?: (returnCode: unknown) => boolean;
+  };
+};
+
 const MOVExporter = NativeModules.MOVExporter as MovExporterModule | undefined;
 
 const toFileUri = (pathOrUri: string): string => {
@@ -90,6 +109,16 @@ const IOS_MOV_COMPRESSION_FALLBACK_PRESETS = [
 ];
 
 const IOS_MOV_MIN_SIZE_REDUCTION_FACTOR = 0.99;
+const MATROSKA_HEADER_BASE64 = 'GkXfow==';
+
+const isMatroskaFile = async (absolutePath: string): Promise<boolean> => {
+  try {
+    const header = await RNFS.read(absolutePath, 4, 0, 'base64');
+    return header === MATROSKA_HEADER_BASE64;
+  } catch {
+    return false;
+  }
+};
 
 export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
   const { videoUri, videoId, originalSizeBytes } = route.params;
@@ -163,11 +192,6 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
       return;
     }
 
-    if (format === 'mkv') {
-      Alert.alert('Not Supported Yet', 'MKV export will be available soon. Please use MP4 or MOV.');
-      return;
-    }
-
     if (format === 'mov' && Platform.OS !== 'ios') {
       Alert.alert('Not Supported Yet', 'MOV export is currently available on iOS only.');
       return;
@@ -225,6 +249,12 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
         options: Record<string, unknown>,
         onProgress?: (progress: number) => void
       ) => Promise<string>;
+      let ffmpegExecuteWithArguments:
+        | ((commandArguments: string[]) => Promise<FFmpegSessionLike>)
+        | undefined;
+      let isFFmpegReturnCodeSuccess:
+        | ((returnCode: unknown) => boolean)
+        | undefined;
 
       try {
         const cameraRollModule = require('@react-native-camera-roll/camera-roll') as {
@@ -258,6 +288,20 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
 
           compressVideo = compressorModule.Video.compress;
         }
+
+        if (format === 'mkv') {
+          const ffmpegKitModule = require('ffmpeg-kit-react-native') as FFmpegKitModule;
+
+          if (
+            !ffmpegKitModule.FFmpegKit?.executeWithArguments ||
+            !ffmpegKitModule.ReturnCode?.isSuccess
+          ) {
+            throw new Error('FFmpeg MKV module is unavailable');
+          }
+
+          ffmpegExecuteWithArguments = ffmpegKitModule.FFmpegKit.executeWithArguments;
+          isFFmpegReturnCodeSuccess = ffmpegKitModule.ReturnCode.isSuccess;
+        }
       } catch {
         throw new Error(
           'Native modules are not linked in the installed app binary. Rebuild the iOS app and try again.'
@@ -267,6 +311,7 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
       let compressedUri: string | undefined;
       let outputUri: string;
       const shouldUseIOSMovNativePath = Platform.OS === 'ios' && format === 'mov';
+      const shouldUseMKVPath = format === 'mkv';
       if (shouldUseIOSMovNativePath) {
         if (!MOVExporter?.compressToMov) {
           throw new Error(
@@ -324,6 +369,89 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
 
         outputUri = selectedResult.uri;
         setConversionProgress(0.7);
+      } else if (shouldUseMKVPath) {
+        if (!compressVideo || !ffmpegExecuteWithArguments || !isFFmpegReturnCodeSuccess) {
+          throw new Error('MKV exporter is unavailable in this app build. Rebuild the app and try again.');
+        }
+
+        const compressedRawPath = await compressVideo(
+          videoUri,
+          {
+            compressionMethod: 'auto',
+            maxSize,
+            bitrate: undefined,
+            minimumFileSizeForCompress: 0,
+          },
+          (progress: number) => {
+            setConversionProgress(Math.min(0.6, Math.max(0, progress * 0.6)));
+          }
+        );
+
+        compressedUri = toFileUri(compressedRawPath);
+        const compressedPath = toAbsolutePath(compressedUri);
+        const mkvTempPath = `${RNFS.TemporaryDirectoryPath}shrynk_${videoId}_${Date.now()}.mkv`;
+
+        if (await RNFS.exists(mkvTempPath)) {
+          await RNFS.unlink(mkvTempPath);
+        }
+
+        const remuxSession = await ffmpegExecuteWithArguments([
+          '-y',
+          '-i',
+          compressedPath,
+          '-map',
+          '0',
+          '-c',
+          'copy',
+          '-f',
+          'matroska',
+          mkvTempPath,
+        ]);
+
+        const remuxReturnCode = await remuxSession.getReturnCode();
+        if (!isFFmpegReturnCodeSuccess(remuxReturnCode)) {
+          if (await RNFS.exists(mkvTempPath)) {
+            await RNFS.unlink(mkvTempPath);
+          }
+
+          const transcodeSession = await ffmpegExecuteWithArguments([
+            '-y',
+            '-i',
+            compressedPath,
+            '-map',
+            '0:v:0',
+            '-map',
+            '0:a?',
+            '-c:v',
+            'mpeg4',
+            '-q:v',
+            '5',
+            '-c:a',
+            'aac',
+            '-b:a',
+            '128k',
+            '-f',
+            'matroska',
+            mkvTempPath,
+          ]);
+
+          const transcodeReturnCode = await transcodeSession.getReturnCode();
+          if (!isFFmpegReturnCodeSuccess(transcodeReturnCode)) {
+            const sessionOutput = await transcodeSession.getOutput();
+            throw new Error(
+              sessionOutput?.trim()
+                ? `MKV export failed: ${sessionOutput}`
+                : 'MKV export failed while converting media.'
+            );
+          }
+        }
+
+        if (!await isMatroskaFile(mkvTempPath)) {
+          throw new Error('MKV export produced an invalid container.');
+        }
+
+        outputUri = toFileUri(mkvTempPath);
+        setConversionProgress(0.85);
       } else {
         const compressedRawPath = await compressVideo(
           videoUri,
@@ -355,7 +483,17 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
       await RNFS.copyFile(toAbsolutePath(outputUri), persistentOutputPath);
       const persistentOutputUri = toFileUri(persistentOutputPath);
 
-      await saveVideo(persistentOutputUri, { type: 'video' });
+      let savedToGallery = false;
+      if (format !== 'mkv' || Platform.OS === 'android') {
+        try {
+          await saveVideo(persistentOutputUri, { type: 'video' });
+          savedToGallery = true;
+        } catch (saveError) {
+          if (format !== 'mkv') {
+            throw saveError;
+          }
+        }
+      }
 
       const statPath = persistentOutputPath;
       const compressedStats = await RNFS.stat(statPath);
@@ -398,7 +536,11 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
         'Conversion Complete',
         format === 'mov'
           ? `Saved to gallery as .MOV (container).\nCodec may display as H.264.\nOutput size: ${formatBytes(compressedSize)}`
-          : `Saved to gallery.\nOutput size: ${formatBytes(compressedSize)}`
+          : format === 'mkv'
+            ? savedToGallery
+              ? `Saved to gallery as .MKV (container).\nCodec may display as H.264.\nOutput size: ${formatBytes(compressedSize)}`
+              : `MKV export complete.\nSaved in app storage as .MKV.\nOutput size: ${formatBytes(compressedSize)}`
+            : `Saved to gallery.\nOutput size: ${formatBytes(compressedSize)}`
       );
       navigation.goBack();
     } catch (error) {
