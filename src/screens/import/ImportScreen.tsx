@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, Alert, InteractionManager } from 'react-native';
+import { View, StyleSheet, Alert, InteractionManager, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { Icon } from '../../components/common/Icon';
@@ -84,15 +84,7 @@ export const ImportScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Icon name="chevron-left" set="Feather" size={24} color={colors.text.primary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Import</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
+    <SafeAreaView style={styles.container} edges={[]}>
       <View style={styles.content}>
         <View style={styles.sourceContainer}>
           <Text style={styles.sectionTitle}>Import From</Text>
@@ -126,20 +118,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background.primary,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
-  },
-  headerTitle: {
-    ...textStyles.headingMedium,
-    color: colors.text.primary,
-  },
-  headerSpacer: {
-    width: 24,
   },
   content: {
     flex: 1,

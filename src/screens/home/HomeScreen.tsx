@@ -24,7 +24,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const handleImport = () => {
     navigation.navigate('Import');
   };
-  
+
   const handleBatch = () => {
     navigation.navigate('Batch');
   };
@@ -33,8 +33,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Shrynk</Text>
-        <TouchableOpacity>
-          <Icon name="menu" set="Feather" size={24} color={colors.text.primary} />
+        <TouchableOpacity onPress={() => navigation.navigate('Settings')}>
+          <Icon name="settings" set="Feather" size={24} color={colors.text.primary} />
         </TouchableOpacity>
       </View>
       

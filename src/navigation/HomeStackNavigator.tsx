@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { HomeScreen } from '../screens/home/HomeScreen';
 import { ImportScreen } from '../screens/import/ImportScreen';
 import { BatchScreen } from '../screens/batch/BatchScreen';
+import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import type { HomeStackParamList } from '../types/navigation';
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();
@@ -16,12 +17,17 @@ export const HomeStackNavigator: React.FC = () => {
       }}
     >
       <Stack.Screen name="HomeMain" component={HomeScreen} />
-      <Stack.Screen 
-        name="Import" 
+      <Stack.Screen
+        name="Import"
         component={ImportScreen}
-        options={{ presentation: 'modal' }}
+        options={{ headerShown: true, title: 'Import' }}
       />
       <Stack.Screen name="Batch" component={BatchScreen} />
+      <Stack.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ headerShown: true, title: 'Settings' }}
+      />
     </Stack.Navigator>
   );
 };

@@ -13,11 +13,11 @@ export type RootStackParamList = {
 export type MainTabParamList = {
   Home: undefined;
   History: undefined;
-  Settings: undefined;
 };
 
 export type HomeStackParamList = {
   HomeMain: undefined;
   Import: undefined;
   Batch: undefined;
+  Settings: undefined;
 };

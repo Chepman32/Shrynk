@@ -56,11 +56,7 @@ export const SettingsScreen: React.FC = () => {
   );
   
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Settings</Text>
-      </View>
-      
+    <SafeAreaView style={styles.container} edges={[]}>
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Compression Defaults */}
         <View style={styles.section}>
@@ -169,14 +165,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background.primary,
-  },
-  header: {
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
-  },
-  headerTitle: {
-    ...textStyles.headingLarge,
-    color: colors.text.primary,
   },
   content: {
     flex: 1,
