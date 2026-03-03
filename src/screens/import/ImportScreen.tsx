@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { Icon } from '../../components/common/Icon';
-import { Button } from '../../components/common/Button';
 import { colors, spacing, textStyles, layout } from '../../theme';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { HomeStackParamList } from '../../types/navigation';
@@ -11,29 +10,28 @@ import type { HomeStackParamList } from '../../types/navigation';
 type Props = NativeStackScreenProps<HomeStackParamList, 'Import'>;
 
 export const ImportScreen: React.FC<Props> = ({ navigation }) => {
-  const [selectedVideos, setSelectedVideos] = useState<any[]>([]);
   
   const handleImportFromGallery = async () => {
     try {
       const result = await launchImageLibrary({
         mediaType: 'video',
-        selectionLimit: 0,
+        selectionLimit: 1, // Only allow 1 video
       });
       
       if (result.assets && result.assets.length > 0) {
-        setSelectedVideos(result.assets);
+        // Automatically import and navigate back
+        navigation.goBack();
+        setTimeout(() => {
+          Alert.alert('Success', 'Video imported successfully');
+        }, 300);
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to import video');
     }
   };
   
-  const handleImport = () => {
-    if (selectedVideos.length > 0) {
-      // Navigate to compression screen with first video
-      navigation.navigate('HomeMain');
-      Alert.alert('Success', `${selectedVideos.length} video(s) imported`);
-    }
+  const handleImportFromFiles = () => {
+    Alert.alert('Coming Soon', 'Files import will be available soon');
   };
   
   return (
@@ -62,7 +60,7 @@ export const ImportScreen: React.FC<Props> = ({ navigation }) => {
           
           <TouchableOpacity 
             style={styles.sourceButton}
-            onPress={() => Alert.alert('Coming Soon', 'Files import will be available soon')}
+            onPress={handleImportFromFiles}
           >
             <View style={styles.sourceIcon}>
               <Icon name="folder" set="Feather" size={32} color={colors.primary[500]} />
@@ -70,26 +68,7 @@ export const ImportScreen: React.FC<Props> = ({ navigation }) => {
             <Text style={styles.sourceLabel}>Files</Text>
           </TouchableOpacity>
         </View>
-        
-        {selectedVideos.length > 0 && (
-          <View style={styles.selectedContainer}>
-            <Text style={styles.selectedText}>
-              {selectedVideos.length} video(s) selected
-            </Text>
-          </View>
-        )}
       </View>
-      
-      {selectedVideos.length > 0 && (
-        <View style={styles.footer}>
-          <Button
-            variant="primary"
-            label={`Import ${selectedVideos.length} Video(s)`}
-            onPress={handleImport}
-            fullWidth
-          />
-        </View>
-      )}
     </SafeAreaView>
   );
 };
@@ -144,22 +123,5 @@ const styles = StyleSheet.create({
     ...textStyles.bodyLarge,
     color: colors.text.primary,
     fontWeight: '600',
-  },
-  selectedContainer: {
-    marginTop: spacing[6],
-    padding: spacing[4],
-    backgroundColor: colors.primary[500],
-    borderRadius: layout.borderRadius.lg,
-    alignItems: 'center',
-  },
-  selectedText: {
-    ...textStyles.bodyMedium,
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  footer: {
-    padding: spacing[4],
-    borderTopWidth: 1,
-    borderTopColor: colors.border.subtle,
   },
 });
