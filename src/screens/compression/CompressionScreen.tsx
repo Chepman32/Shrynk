@@ -48,10 +48,10 @@ const FORMAT_OPTIONS: { value: VideoFormat; label: string; description: string; 
 ];
 
 const RESOLUTION_OPTIONS: { value: Resolution; label: string }[] = [
-  { value: '480p', label: '480p (SD)' },
-  { value: '720p', label: '720p (HD)' },
-  { value: '1080p', label: '1080p (Full HD)' },
-  { value: '4k', label: '4K (Ultra HD)' },
+  { value: '480p', label: '480p' },
+  { value: '720p', label: '720p' },
+  { value: '1080p', label: '1080p' },
+  { value: '4k', label: '4K' },
   { value: 'original', label: 'Original' },
 ];
 
@@ -816,25 +816,22 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
           style={styles.section}
         >
           <Text style={styles.sectionTitle}>Resolution</Text>
-          <View style={styles.optionsList}>
+          <View style={styles.chipRow}>
             {RESOLUTION_OPTIONS.map((option) => (
               <TouchableOpacity
                 key={option.value}
                 style={[
-                  styles.listOption,
-                  resolution === option.value && styles.listOptionSelected,
+                  styles.chip,
+                  resolution === option.value && styles.chipSelected,
                 ]}
                 onPress={() => setResolution(option.value)}
               >
                 <Text style={[
-                  styles.listOptionLabel,
-                  resolution === option.value && styles.listOptionLabelSelected,
+                  styles.chipLabel,
+                  resolution === option.value && styles.chipLabelSelected,
                 ]}>
                   {option.label}
                 </Text>
-                {resolution === option.value && (
-                  <Icon name="check" set="Feather" size={20} color={colors.primary[500]} />
-                )}
               </TouchableOpacity>
             ))}
           </View>
@@ -1026,6 +1023,31 @@ const styles = StyleSheet.create({
     ...textStyles.bodySmall,
     color: colors.text.tertiary,
     marginTop: spacing[0.5],
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing[2],
+  },
+  chip: {
+    paddingVertical: spacing[2],
+    paddingHorizontal: spacing[3],
+    backgroundColor: colors.surface.primary,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  chipSelected: {
+    borderColor: colors.primary[500],
+    backgroundColor: colors.surface.secondary,
+  },
+  chipLabel: {
+    ...textStyles.bodyMedium,
+    color: colors.text.primary,
+    fontWeight: '600',
+  },
+  chipLabelSelected: {
+    color: colors.primary[500],
   },
   scrollSpacer: {
     height: spacing[20],
