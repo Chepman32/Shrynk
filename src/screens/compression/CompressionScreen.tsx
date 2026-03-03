@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  NativeModules,
   PermissionsAndroid,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,7 +27,12 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Compression'>;
 
 const FORMAT_OPTIONS: { value: VideoFormat; label: string; description: string; supported: boolean }[] = [
   { value: 'mp4', label: 'MP4', description: 'Best compatibility', supported: true },
-  { value: 'mov', label: 'MOV', description: 'Coming soon', supported: false },
+  {
+    value: 'mov',
+    label: 'MOV',
+    description: Platform.OS === 'ios' ? 'QuickTime (Apple)' : 'iOS only',
+    supported: Platform.OS === 'ios',
+  },
   { value: 'mkv', label: 'MKV', description: 'Coming soon', supported: false },
 ];
 
@@ -51,6 +57,37 @@ const FORMAT_SIZE_FACTORS: Record<VideoFormat, number> = {
   mov: 1.1,
   mkv: 0.95,
 };
+
+type MovExporterModule = {
+  exportToMov: (sourceUri: string) => Promise<string>;
+  compressToMov: (sourceUri: string, presetName: string) => Promise<string>;
+};
+
+const MOVExporter = NativeModules.MOVExporter as MovExporterModule | undefined;
+
+const toFileUri = (pathOrUri: string): string => {
+  return pathOrUri.startsWith('file://') ? pathOrUri : `file://${pathOrUri}`;
+};
+
+const toAbsolutePath = (fileUri: string): string => {
+  return fileUri.replace(/^file:\/\//, '');
+};
+
+const IOS_MOV_PRESET_BY_RESOLUTION: Record<Resolution, string> = {
+  '480p': 'AVAssetExportPreset640x480',
+  '720p': 'AVAssetExportPreset1280x720',
+  '1080p': 'AVAssetExportPreset1920x1080',
+  '4k': 'AVAssetExportPreset3840x2160',
+  original: 'AVAssetExportPresetMediumQuality',
+};
+
+const IOS_MOV_COMPRESSION_FALLBACK_PRESETS = [
+  'AVAssetExportPresetLowQuality',
+  'AVAssetExportPreset960x540',
+  'AVAssetExportPreset640x480',
+];
+
+const IOS_MOV_MIN_SIZE_REDUCTION_FACTOR = 0.99;
 
 export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
   const { videoUri, videoId, originalSizeBytes } = route.params;
@@ -124,8 +161,13 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
       return;
     }
 
-    if (format !== 'mp4') {
-      Alert.alert('Not Supported Yet', 'MOV and MKV export will be available soon. Please use MP4.');
+    if (format === 'mkv') {
+      Alert.alert('Not Supported Yet', 'MKV export will be available soon. Please use MP4 or MOV.');
+      return;
+    }
+
+    if (format === 'mov' && Platform.OS !== 'ios') {
+      Alert.alert('Not Supported Yet', 'MOV export is currently available on iOS only.');
       return;
     }
 
@@ -170,22 +212,19 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
         }
       })();
 
-      let compressVideo: (
-        uri: string,
-        options: Record<string, unknown>,
-        onProgress?: (progress: number) => void
-      ) => Promise<string>;
       let saveVideo: (
         uri: string,
         options: { type: 'video' }
       ) => Promise<
         string | { node?: { image?: { uri?: string } } }
       >;
+      let compressVideo: (
+        uri: string,
+        options: Record<string, unknown>,
+        onProgress?: (progress: number) => void
+      ) => Promise<string>;
 
       try {
-        const compressorModule = require('react-native-compressor') as {
-          Video?: { compress?: typeof compressVideo };
-        };
         const cameraRollModule = require('@react-native-camera-roll/camera-roll') as {
           CameraRoll?: {
             save?: typeof saveVideo;
@@ -193,11 +232,10 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
           };
         };
 
-        if (!compressorModule.Video?.compress || !cameraRollModule.CameraRoll) {
+        if (!cameraRollModule.CameraRoll) {
           throw new Error('Native modules are unavailable');
         }
 
-        compressVideo = compressorModule.Video.compress;
         if (cameraRollModule.CameraRoll.saveAsset) {
           saveVideo = cameraRollModule.CameraRoll.saveAsset;
         } else if (cameraRollModule.CameraRoll.save) {
@@ -205,38 +243,118 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
         } else {
           throw new Error('CameraRoll save API is unavailable');
         }
+
+        const shouldUseIOSMovNativePath = Platform.OS === 'ios' && format === 'mov';
+        if (!shouldUseIOSMovNativePath) {
+          const compressorModule = require('react-native-compressor') as {
+            Video?: { compress?: typeof compressVideo };
+          };
+
+          if (!compressorModule.Video?.compress) {
+            throw new Error('Video compressor module is unavailable');
+          }
+
+          compressVideo = compressorModule.Video.compress;
+        }
       } catch {
         throw new Error(
           'Native modules are not linked in the installed app binary. Rebuild the iOS app and try again.'
         );
       }
 
-      const compressedRawPath = await compressVideo(
-        videoUri,
-        {
-          compressionMethod: 'auto',
-          maxSize,
-          bitrate: undefined,
-          minimumFileSizeForCompress: 0,
-        },
-        (progress: number) => {
-          setConversionProgress(Math.min(1, Math.max(0, progress)));
+      let compressedUri: string | undefined;
+      let outputUri: string;
+      const shouldUseIOSMovNativePath = Platform.OS === 'ios' && format === 'mov';
+      if (shouldUseIOSMovNativePath) {
+        if (!MOVExporter?.compressToMov) {
+          throw new Error(
+            'MOV exporter is unavailable in this app build. Rebuild the iOS app and try again.'
+          );
         }
-      );
+        setConversionProgress(0.1);
+        const exportMovWithPreset = async (presetName: string) => {
+          const uri = toFileUri(await MOVExporter.compressToMov(videoUri, presetName));
+          const path = toAbsolutePath(uri);
+          const stats = await RNFS.stat(path);
+          const size = Number(stats.size ?? 0);
+          return { uri, path, size };
+        };
 
-      const compressedUri = compressedRawPath.startsWith('file://')
-        ? compressedRawPath
-        : `file://${compressedRawPath}`;
+        const basePreset = IOS_MOV_PRESET_BY_RESOLUTION[resolution];
+        const attemptedPresets = new Set<string>([basePreset]);
+        let selectedResult = await exportMovWithPreset(basePreset);
 
-      const savedResult = await saveVideo(compressedUri, { type: 'video' });
+        const shouldTryStrongerCompression =
+          originalSizeBytes > 0 &&
+          selectedResult.size >= originalSizeBytes * IOS_MOV_MIN_SIZE_REDUCTION_FACTOR;
+
+        if (shouldTryStrongerCompression) {
+          const fallbackPresets = IOS_MOV_COMPRESSION_FALLBACK_PRESETS.filter(
+            preset => !attemptedPresets.has(preset)
+          );
+
+          for (const [index, fallbackPreset] of fallbackPresets.entries()) {
+            setConversionProgress(0.35 + index * 0.15);
+            attemptedPresets.add(fallbackPreset);
+            const candidateResult = await exportMovWithPreset(fallbackPreset);
+
+            if (candidateResult.size > 0 && candidateResult.size < selectedResult.size) {
+              if (await RNFS.exists(selectedResult.path)) {
+                await RNFS.unlink(selectedResult.path);
+              }
+              selectedResult = candidateResult;
+            } else if (await RNFS.exists(candidateResult.path)) {
+              await RNFS.unlink(candidateResult.path);
+            }
+
+            if (
+              originalSizeBytes > 0 &&
+              selectedResult.size < originalSizeBytes * IOS_MOV_MIN_SIZE_REDUCTION_FACTOR
+            ) {
+              break;
+            }
+          }
+        }
+
+        if (!selectedResult.path.toLowerCase().endsWith('.mov')) {
+          throw new Error('MOV export produced an invalid output file type.');
+        }
+
+        outputUri = selectedResult.uri;
+        setConversionProgress(0.7);
+      } else {
+        const compressedRawPath = await compressVideo(
+          videoUri,
+          {
+            compressionMethod: 'auto',
+            maxSize,
+            bitrate: undefined,
+            minimumFileSizeForCompress: 0,
+          },
+          (progress: number) => {
+            setConversionProgress(Math.min(1, Math.max(0, progress)));
+          }
+        );
+        compressedUri = toFileUri(compressedRawPath);
+        outputUri = compressedUri;
+      }
+
+      const savedResult = await saveVideo(outputUri, { type: 'video' });
       const savedUri =
         typeof savedResult === 'string'
           ? savedResult
-          : savedResult?.node?.image?.uri ?? compressedUri;
+          : savedResult?.node?.image?.uri ?? outputUri;
 
-      const statPath = compressedUri.replace(/^file:\/\//, '');
+      const statPath = toAbsolutePath(outputUri);
       const compressedStats = await RNFS.stat(statPath);
       const compressedSize = Number(compressedStats.size ?? 0);
+
+      if (compressedUri && outputUri !== compressedUri) {
+        const intermediatePath = toAbsolutePath(compressedUri);
+        if (await RNFS.exists(intermediatePath)) {
+          await RNFS.unlink(intermediatePath);
+        }
+      }
 
       const sourceName = selectedVideoName;
       const normalizedName = sourceName.replace(/\.[^/.]+$/, '');
