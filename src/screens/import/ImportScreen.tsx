@@ -69,6 +69,7 @@ export const ImportScreen: React.FC<Props> = ({ navigation }) => {
       const compressionParams = {
         videoUri: video.uri,
         videoId,
+        originalSizeBytes: video.fileSize ?? 0,
       };
 
       openCompressionScreen(compressionParams);

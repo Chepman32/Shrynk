@@ -8,6 +8,7 @@ import { colors, spacing, textStyles, layout, shadows } from '../../theme';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../types/navigation';
 import type { Resolution, VideoFormat } from '../../types/compression';
+import { formatBytes } from '../../utils/formatters';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Compression'>;
 
@@ -25,19 +26,25 @@ const RESOLUTION_OPTIONS: { value: Resolution; label: string }[] = [
   { value: 'original', label: 'Original' },
 ];
 
-const TARGET_SIZE_OPTIONS: { value: number; label: string; description: string }[] = [
-  { value: 10, label: '10 MB', description: 'Very small output' },
-  { value: 25, label: '25 MB', description: 'Compact sharing size' },
-  { value: 50, label: '50 MB', description: 'Balanced quality/size' },
-  { value: 100, label: '100 MB', description: 'Higher quality output' },
-];
+const RESOLUTION_SIZE_FACTORS: Record<Resolution, number> = {
+  '480p': 0.3,
+  '720p': 0.5,
+  '1080p': 0.75,
+  '4k': 1.35,
+  original: 1,
+};
+
+const FORMAT_SIZE_FACTORS: Record<VideoFormat, number> = {
+  mp4: 0.85,
+  mov: 1.1,
+  mkv: 0.95,
+};
 
 export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
-  const { videoUri } = route.params;
+  const { videoUri, originalSizeBytes } = route.params;
 
   const [format, setFormat] = useState<VideoFormat>('mp4');
   const [resolution, setResolution] = useState<Resolution>('original');
-  const [targetSizeMb, setTargetSizeMb] = useState<number>(50);
 
   const selectedResolutionLabel = useMemo(() => {
     return RESOLUTION_OPTIONS.find(option => option.value === resolution)?.label ?? 'Original';
@@ -53,11 +60,55 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
     }
   }, [videoUri]);
 
+  const estimatedSizeBytes = useMemo(() => {
+    if (!originalSizeBytes) {
+      return 0;
+    }
+
+    const estimated = Math.round(
+      originalSizeBytes * RESOLUTION_SIZE_FACTORS[resolution] * FORMAT_SIZE_FACTORS[format]
+    );
+    return Math.max(estimated, 1);
+  }, [format, originalSizeBytes, resolution]);
+
+  const estimatedSizeText = useMemo(() => {
+    if (!estimatedSizeBytes) {
+      return 'Unavailable';
+    }
+    return formatBytes(estimatedSizeBytes);
+  }, [estimatedSizeBytes]);
+
+  const originalSizeText = useMemo(() => {
+    if (!originalSizeBytes) {
+      return 'Unavailable';
+    }
+    return formatBytes(originalSizeBytes);
+  }, [originalSizeBytes]);
+
+  const estimatedDeltaText = useMemo(() => {
+    if (!originalSizeBytes || !estimatedSizeBytes) {
+      return 'Unknown';
+    }
+
+    const changeRatio = estimatedSizeBytes / originalSizeBytes;
+    const percent = Math.abs((1 - changeRatio) * 100).toFixed(0);
+
+    if (changeRatio < 1) {
+      return `${percent}% smaller`;
+    }
+
+    if (changeRatio > 1) {
+      return `${percent}% larger`;
+    }
+
+    return 'Same size';
+  }, [estimatedSizeBytes, originalSizeBytes]);
+
   const handleStartCompression = () => {
     // TODO: Implement actual compression logic
     Alert.alert(
       'Conversion Started',
-      `Format: ${format.toUpperCase()}\nResolution: ${selectedResolutionLabel}\nTarget Size: ${targetSizeMb} MB`,
+      `Format: ${format.toUpperCase()}\nResolution: ${selectedResolutionLabel}\nEstimated Size: ${estimatedSizeText}`,
       [
         {
           text: 'OK',
@@ -149,43 +200,27 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
           </View>
         </Animated.View>
 
-        {/* Target Size Selection */}
+        {/* Estimated Size */}
         <Animated.View
           entering={FadeInDown.delay(400).springify()}
           style={styles.section}
         >
-          <Text style={styles.sectionTitle}>Target Size</Text>
-          <View style={styles.optionsGrid}>
-            {TARGET_SIZE_OPTIONS.map((option) => (
-              <TouchableOpacity
-                key={String(option.value)}
-                style={[
-                  styles.optionCard,
-                  targetSizeMb === option.value && styles.optionCardSelected,
-                ]}
-                onPress={() => setTargetSizeMb(option.value)}
-              >
-                <View>
-                  <Text style={[
-                    styles.optionLabel,
-                    targetSizeMb === option.value && styles.optionLabelSelected,
-                  ]}>
-                    {option.label}
-                  </Text>
-                  <Text style={[
-                    styles.optionDescription,
-                    targetSizeMb === option.value && styles.optionDescriptionSelected,
-                  ]}>
-                    {option.description}
-                  </Text>
-                </View>
-                {targetSizeMb === option.value && (
-                  <View style={styles.selectedBadge}>
-                    <Icon name="check" set="Feather" size={16} color="#FFFFFF" />
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
+          <Text style={styles.sectionTitle}>Estimated Output</Text>
+          <View style={styles.estimateCard}>
+            <View style={styles.estimateRow}>
+              <Text style={styles.estimateLabel}>Original</Text>
+              <Text style={styles.estimateValue}>{originalSizeText}</Text>
+            </View>
+            <View style={styles.estimateRow}>
+              <Text style={styles.estimateLabel}>Output</Text>
+              <Text style={styles.estimateValue}>{format.toUpperCase()} • {selectedResolutionLabel}</Text>
+            </View>
+            <View style={styles.estimateDivider} />
+            <View style={styles.estimateRow}>
+              <Text style={styles.estimatePrimaryLabel}>Estimated Size</Text>
+              <Text style={styles.estimatePrimaryValue}>{estimatedSizeText}</Text>
+            </View>
+            <Text style={styles.estimateFootnote}>{estimatedDeltaText}</Text>
           </View>
         </Animated.View>
 
@@ -256,50 +291,47 @@ const styles = StyleSheet.create({
     marginBottom: spacing[3],
     textTransform: 'uppercase',
   },
-  optionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[2],
-  },
-  optionCard: {
-    flex: 1,
-    minWidth: '47%',
+  estimateCard: {
     padding: spacing[4],
     backgroundColor: colors.surface.primary,
     borderRadius: layout.borderRadius.lg,
-    borderWidth: 2,
-    borderColor: 'transparent',
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    gap: spacing[2],
   },
-  optionCardSelected: {
-    borderColor: colors.primary[500],
-    backgroundColor: colors.surface.secondary,
+  estimateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing[2],
   },
-  optionLabel: {
-    ...textStyles.bodyLarge,
-    color: colors.text.primary,
-    fontWeight: '600',
-    marginBottom: spacing[1],
-  },
-  optionLabelSelected: {
-    color: colors.primary[500],
-  },
-  optionDescription: {
+  estimateLabel: {
     ...textStyles.bodySmall,
-    color: colors.text.tertiary,
-  },
-  optionDescriptionSelected: {
     color: colors.text.secondary,
   },
-  selectedBadge: {
-    position: 'absolute',
-    top: spacing[2],
-    right: spacing[2],
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.primary[500],
-    justifyContent: 'center',
-    alignItems: 'center',
+  estimateValue: {
+    ...textStyles.bodyMedium,
+    color: colors.text.primary,
+    fontWeight: '500',
+  },
+  estimateDivider: {
+    height: 1,
+    backgroundColor: colors.border.subtle,
+    marginVertical: spacing[1],
+  },
+  estimatePrimaryLabel: {
+    ...textStyles.bodyMedium,
+    color: colors.text.primary,
+    fontWeight: '600',
+  },
+  estimatePrimaryValue: {
+    ...textStyles.bodyLarge,
+    color: colors.primary[500],
+    fontWeight: '700',
+  },
+  estimateFootnote: {
+    ...textStyles.bodySmall,
+    color: colors.text.tertiary,
   },
   optionsList: {
     gap: spacing[2],
