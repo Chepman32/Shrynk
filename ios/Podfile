@@ -1,4 +1,5 @@
 # Resolve react_native_pods.rb with node to allow for hoisting
+require 'fileutils'
 require Pod::Executable.execute_command('node', ['-p',
   'require.resolve(
     "react-native/scripts/react_native_pods.rb",
@@ -30,5 +31,76 @@ target 'Shrynk' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    installer.pods_project.targets.each do |target|
+      next unless target.name == 'RNReanimated'
+
+      target.build_configurations.each do |build_configuration|
+        header_search_paths = build_configuration.build_settings['HEADER_SEARCH_PATHS']
+        header_search_paths = ['$(inherited)'] if header_search_paths.nil?
+        header_search_paths = [header_search_paths] unless header_search_paths.is_a?(Array)
+
+        [
+          '$(PODS_ROOT)/Headers/Private/Yoga',
+          '$(PODS_ROOT)/hermes-engine/destroot/include'
+        ].each do |path|
+          header_search_paths << path unless header_search_paths.include?(path)
+        end
+
+        build_configuration.build_settings['HEADER_SEARCH_PATHS'] = header_search_paths
+      end
+
+      target.source_build_phase.files.each do |build_file|
+        next unless build_file.settings && build_file.settings['COMPILER_FLAGS']
+
+        compiler_flags = build_file.settings['COMPILER_FLAGS']
+        next unless compiler_flags.include?('-DHERMES_ENABLE_DEBUGGER')
+
+        build_file.settings['COMPILER_FLAGS'] = compiler_flags
+          .gsub('-DHERMES_ENABLE_DEBUGGER', '')
+          .gsub(/\s+/, ' ')
+          .strip
+      end
+    end
+
+    hermes_registration_header = File.join(
+      installer.sandbox.root.to_s,
+      'hermes-engine',
+      'destroot',
+      'include',
+      'hermes',
+      'inspector',
+      'chrome',
+      'Registration.h'
+    )
+
+    unless File.exist?(hermes_registration_header)
+      FileUtils.mkdir_p(File.dirname(hermes_registration_header))
+      File.write(
+        hermes_registration_header,
+        <<~'HEADER'
+          #pragma once
+
+          #include <memory>
+          #include <string>
+
+          namespace facebook::hermes::inspector {
+          class RuntimeAdapter;
+
+          namespace chrome {
+          using DebugSessionToken = int;
+
+          inline DebugSessionToken enableDebugging(
+              std::unique_ptr<facebook::hermes::inspector::RuntimeAdapter>,
+              const std::string &) {
+            return 0;
+          }
+
+          inline void disableDebugging(DebugSessionToken) {}
+          } // namespace chrome
+          } // namespace facebook::hermes::inspector
+        HEADER
+      )
+    end
   end
 end

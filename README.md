@@ -1,97 +1,264 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Shrynk - Video Size Compressor for iOS
 
-# Getting Started
+A production-ready iOS mobile application designed to compress video files entirely offline with sophisticated animations powered by React Native Reanimated and React Native Skia.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Features
 
-## Step 1: Start Metro
+- ✨ **Offline Video Compression** - Compress videos without internet connection
+- 🎨 **Beautiful Animations** - Smooth, physics-based animations using Reanimated & Skia
+- 📱 **Gesture-Driven Interface** - Intuitive swipe, pinch, and tap gestures
+- 🎯 **Multiple Quality Presets** - Pre-configured settings for different use cases
+- 📊 **Compression Statistics** - Track space saved and compression history
+- 🎬 **Video Preview** - Side-by-side comparison before and after compression
+- ✂️ **Video Trimming** - Cut unwanted portions before compression
+- 📤 **Multiple Export Options** - Save to Photos, Files, or share directly
+- 🌙 **Dark Mode** - Beautiful dark theme optimized for OLED displays
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## Tech Stack
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+- **Framework:** React Native 0.73+
+- **Language:** TypeScript 5.0+
+- **Animation:** React Native Reanimated 3.x, React Native Skia
+- **Navigation:** React Navigation 6.x
+- **State Management:** Zustand 4.x
+- **Storage:** MMKV (fast key-value storage)
+- **Video Processing:** FFmpeg Kit
+- **UI Components:** Custom components with Gesture Handler
 
-```sh
-# Using npm
-npm start
+## Prerequisites
 
-# OR using Yarn
-yarn start
+- Node.js >= 18.0.0
+- Xcode 14.0+ (for iOS development)
+- CocoaPods
+- iOS 14.0+ device or simulator
+
+## Installation
+
+1. **Clone the repository**
+```bash
+git clone <repository-url>
+cd Shrynk
 ```
 
-## Step 2: Build and run your app
-
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
+2. **Install dependencies**
+```bash
+npm install
 ```
+
+3. **Install iOS dependencies**
+```bash
+cd ios
+pod install
+cd ..
+```
+
+4. **Link vector icons**
+```bash
+npx react-native-asset
+```
+
+## Running the App
 
 ### iOS
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
+```bash
+npm run ios
 ```
 
-Then, and every time you update your native dependencies, run:
+Or open `ios/Shrynk.xcworkspace` in Xcode and run from there.
 
-```sh
-bundle exec pod install
-```
+### Development
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+```bash
+# Start Metro bundler
+npm start
 
-```sh
-# Using npm
+# Run on iOS
 npm run ios
 
-# OR using Yarn
-yarn ios
+# Run linter
+npm run lint
+
+# Run tests
+npm test
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+## Project Structure
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+```
+Shrynk/
+├── src/
+│   ├── components/        # Reusable UI components
+│   │   ├── common/       # Common components (Button, Icon, etc.)
+│   │   ├── animated/     # Animated components
+│   │   └── skia/         # Skia-based components
+│   ├── screens/          # Screen components
+│   │   ├── splash/       # Splash screen with animations
+│   │   ├── home/         # Home screen
+│   │   ├── import/       # Video import screen
+│   │   ├── compression/  # Compression interface
+│   │   ├── preview/      # Video comparison
+│   │   ├── export/       # Export options
+│   │   ├── history/      # Compression history
+│   │   ├── settings/     # App settings
+│   │   └── batch/        # Batch processing
+│   ├── navigation/       # Navigation configuration
+│   ├── services/         # Business logic services
+│   │   ├── compression/  # Video compression engine
+│   │   ├── storage/      # File and data storage
+│   │   └── video/        # Video utilities
+│   ├── store/            # Zustand state management
+│   ├── hooks/            # Custom React hooks
+│   ├── theme/            # Design system (colors, typography, etc.)
+│   ├── types/            # TypeScript type definitions
+│   └── utils/            # Utility functions
+├── ios/                  # iOS native code
+├── android/              # Android native code (future)
+└── assets/               # Static assets
+```
 
-## Step 3: Modify your app
+## Key Features Implementation
 
-Now that you have successfully run the app, let's make changes!
+### 1. Video Compression
+- Uses FFmpeg Kit for high-quality video compression
+- Supports H.264 and H.265 codecs
+- Hardware acceleration on iOS
+- Multiple quality presets (Low, Medium, High, Maximum)
+- Custom compression settings
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+### 2. Animations
+- Splash screen with physics-based logo animation
+- Smooth screen transitions
+- Gesture-driven interactions
+- Progress indicators with Skia
+- Micro-interactions throughout the app
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+### 3. Offline Capability
+- All features work without internet
+- Local storage using MMKV
+- File system management with React Native FS
+- Persistent compression history
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+### 4. User Experience
+- Intuitive gesture controls
+- Haptic feedback
+- Pull-to-refresh
+- Swipeable list items
+- Bottom sheet modals
+- Smooth tab bar animations
 
-## Congratulations! :tada:
+## Configuration
 
-You've successfully run and modified your React Native App. :partying_face:
+### Compression Settings
 
-### Now what?
+Default compression settings can be modified in `src/store/useSettingsStore.ts`:
 
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
+```typescript
+const defaultSettings = {
+  defaultQuality: 'medium',
+  defaultResolution: '1080p',
+  defaultCodec: 'h264',
+  preserveMetadata: true,
+  hardwareAcceleration: true,
+  // ... more settings
+};
+```
 
-# Troubleshooting
+### Theme Customization
 
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
+Colors and design tokens are defined in `src/theme/`:
+- `colors.ts` - Color palette
+- `typography.ts` - Font styles
+- `spacing.ts` - Spacing system
+- `shadows.ts` - Shadow definitions
+- `animations.ts` - Animation configurations
 
-# Learn More
+## Performance Optimization
 
-To learn more about React Native, take a look at the following resources:
+- Optimized list rendering with FlashList
+- Image caching with FastImage
+- Lazy loading of screens
+- Memory-efficient video processing
+- Native driver for animations
+- Reduced motion support for accessibility
 
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+## Accessibility
+
+- VoiceOver support
+- Dynamic Type support
+- Minimum touch target sizes (44x44)
+- High contrast mode support
+- Reduced motion option
+- Semantic labels for all interactive elements
+
+## Security
+
+- Secure storage with MMKV encryption
+- Automatic temp file cleanup
+- No data collection or analytics
+- All processing happens locally
+- Secure file handling
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Pod install fails**
+   ```bash
+   cd ios
+   pod deintegrate
+   pod install
+   ```
+
+2. **Metro bundler issues**
+   ```bash
+   npm start -- --reset-cache
+   ```
+
+3. **Build errors**
+   - Clean build folder in Xcode
+   - Delete `node_modules` and reinstall
+   - Clear Metro cache
+
+### iOS Specific
+
+- Ensure Xcode Command Line Tools are installed
+- Check iOS deployment target is set to 14.0+
+- Verify signing certificates are configured
+
+## Contributing
+
+Contributions are welcome! Please read the contributing guidelines before submitting PRs.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- React Native team for the amazing framework
+- FFmpeg team for the powerful video processing library
+- React Native Reanimated & Skia teams for animation capabilities
+- All open-source contributors
+
+## Support
+
+For issues, questions, or suggestions:
+- Open an issue on GitHub
+- Check the documentation in `SDD.md`
+
+## Roadmap
+
+- [ ] Android support
+- [ ] Batch processing
+- [ ] Video trimming interface
+- [ ] Advanced compression presets
+- [ ] Cloud backup integration (optional)
+- [ ] Video filters and effects
+- [ ] Multi-language support
+
+---
+
+**Version:** 1.0.0  
+**Platform:** iOS 14.0+  
+**Last Updated:** 2024
