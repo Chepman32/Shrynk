@@ -9,7 +9,7 @@ import type { HomeStackParamList } from '../../types/navigation';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { MainTabParamList, RootStackParamList } from '../../types/navigation';
-import { navigateToCompression, navigationRef } from '../../navigation/navigationRef';
+import { navigateToCompression as navigateToCompressionScreen, navigationRef } from '../../navigation/navigationRef';
 
 type Props = CompositeScreenProps<
   NativeStackScreenProps<HomeStackParamList, 'Import'>,
@@ -20,7 +20,7 @@ type Props = CompositeScreenProps<
 >;
 
 export const ImportScreen: React.FC<Props> = ({ navigation }) => {
-  const navigateToCompression = (params: RootStackParamList['Compression']) => {
+  const openCompressionScreen = (params: RootStackParamList['Compression']) => {
     if (!navigationRef.isReady()) {
       Alert.alert('Error', 'Unable to open conversion settings');
       return;
@@ -34,7 +34,7 @@ export const ImportScreen: React.FC<Props> = ({ navigation }) => {
 
     InteractionManager.runAfterInteractions(() => {
       setTimeout(() => {
-        const didNavigate = navigateToCompression(params);
+        const didNavigate = navigateToCompressionScreen(params);
         if (!didNavigate) {
           Alert.alert('Error', 'Unable to open conversion settings');
         }
@@ -71,7 +71,7 @@ export const ImportScreen: React.FC<Props> = ({ navigation }) => {
         videoId,
       };
 
-      navigateToCompression(compressionParams);
+      openCompressionScreen(compressionParams);
     } catch (error) {
       console.error('Import error:', error);
       Alert.alert('Error', 'Failed to import video');
