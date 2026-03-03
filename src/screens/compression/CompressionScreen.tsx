@@ -24,10 +24,10 @@ import { useHistoryStore } from '../../store/useHistoryStore';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Compression'>;
 
-const FORMAT_OPTIONS: { value: VideoFormat; label: string; description: string }[] = [
-  { value: 'mp4', label: 'MP4', description: 'Best compatibility' },
-  { value: 'mov', label: 'MOV', description: 'High quality' },
-  { value: 'mkv', label: 'MKV', description: 'Flexible container' },
+const FORMAT_OPTIONS: { value: VideoFormat; label: string; description: string; supported: boolean }[] = [
+  { value: 'mp4', label: 'MP4', description: 'Best compatibility', supported: true },
+  { value: 'mov', label: 'MOV', description: 'Coming soon', supported: false },
+  { value: 'mkv', label: 'MKV', description: 'Coming soon', supported: false },
 ];
 
 const RESOLUTION_OPTIONS: { value: Resolution; label: string }[] = [
@@ -124,6 +124,11 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
       return;
     }
 
+    if (format !== 'mp4') {
+      Alert.alert('Not Supported Yet', 'MOV and MKV export will be available soon. Please use MP4.');
+      return;
+    }
+
     const ensureAndroidGalleryPermission = async () => {
       if (Platform.OS !== 'android') {
         return true;
@@ -170,7 +175,12 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
         options: Record<string, unknown>,
         onProgress?: (progress: number) => void
       ) => Promise<string>;
-      let saveVideo: (uri: string, options: { type: 'video' }) => Promise<string>;
+      let saveVideo: (
+        uri: string,
+        options: { type: 'video' }
+      ) => Promise<
+        string | { node?: { image?: { uri?: string } } }
+      >;
 
       try {
         const compressorModule = require('react-native-compressor') as {
@@ -204,7 +214,7 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
       const compressedRawPath = await compressVideo(
         videoUri,
         {
-          compressionMethod: 'manual',
+          compressionMethod: 'auto',
           maxSize,
           bitrate: undefined,
           minimumFileSizeForCompress: 0,
@@ -218,7 +228,11 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
         ? compressedRawPath
         : `file://${compressedRawPath}`;
 
-      const savedUri = await saveVideo(compressedUri, { type: 'video' });
+      const savedResult = await saveVideo(compressedUri, { type: 'video' });
+      const savedUri =
+        typeof savedResult === 'string'
+          ? savedResult
+          : savedResult?.node?.image?.uri ?? compressedUri;
 
       const statPath = compressedUri.replace(/^file:\/\//, '');
       const compressedStats = await RNFS.stat(statPath);
@@ -295,8 +309,15 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
                 style={[
                   styles.listOption,
                   format === option.value && styles.listOptionSelected,
+                  !option.supported && styles.listOptionDisabled,
                 ]}
-                onPress={() => setFormat(option.value)}
+                onPress={() => {
+                  if (!option.supported) {
+                    Alert.alert('Coming Soon', `${option.label} export is not available yet.`);
+                    return;
+                  }
+                  setFormat(option.value);
+                }}
               >
                 <View style={styles.listOptionContent}>
                   <Text style={[
@@ -514,6 +535,9 @@ const styles = StyleSheet.create({
   listOptionSelected: {
     borderColor: colors.primary[500],
     backgroundColor: colors.surface.secondary,
+  },
+  listOptionDisabled: {
+    opacity: 0.55,
   },
   listOptionContent: {
     flex: 1,
