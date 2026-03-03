@@ -11,4 +11,9 @@ RCT_EXTERN_METHOD(compressToMov:(NSString *)sourceUri
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(compressToHevcMov:(NSString *)sourceUri
+                  presetName:(NSString *)presetName
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 @end

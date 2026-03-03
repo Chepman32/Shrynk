@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreMedia
 import Foundation
 import Photos
 import React
@@ -39,7 +40,54 @@ class MOVExporter: NSObject {
 
       self.exportAssetToMov(
         asset: asset,
-        requestedPresetName: presetName,
+        presetCandidates: self.movPresetCandidates(requestedPresetName: presetName),
+        expectedVideoCodec: nil,
+        noCompatiblePresetErrorCode: "preset_unavailable",
+        noCompatiblePresetErrorMessage: "No compatible export preset was found for this video.",
+        exportFailedErrorCode: "mov_export_failed",
+        exportFailedFallbackMessage: "MOV export failed.",
+        exportCancelledErrorCode: "mov_export_cancelled",
+        exportCancelledMessage: "MOV export was cancelled.",
+        exportUnknownErrorCode: "mov_export_unknown",
+        exportUnknownFallbackMessage: "MOV export failed with unknown status.",
+        codecValidationErrorCode: "mov_codec_invalid",
+        resolve: resolve,
+        reject: reject
+      )
+    }
+  }
+
+  @objc(compressToHevcMov:presetName:resolver:rejecter:)
+  func compressToHevcMov(
+    _ sourceUri: String,
+    presetName: String,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    guard #available(iOS 11.0, *) else {
+      reject("hevc_unavailable", "HEVC export requires iOS 11 or newer.", nil)
+      return
+    }
+
+    resolveAsset(from: sourceUri) { asset in
+      guard let asset else {
+        reject("invalid_source_uri", "Unable to load source video asset.", nil)
+        return
+      }
+
+      self.exportAssetToMov(
+        asset: asset,
+        presetCandidates: self.hevcPresetCandidates(requestedPresetName: presetName),
+        expectedVideoCodec: kCMVideoCodecType_HEVC,
+        noCompatiblePresetErrorCode: "hevc_preset_unavailable",
+        noCompatiblePresetErrorMessage: "No compatible HEVC export preset was found for this video.",
+        exportFailedErrorCode: "hevc_export_failed",
+        exportFailedFallbackMessage: "HEVC export failed.",
+        exportCancelledErrorCode: "hevc_export_cancelled",
+        exportCancelledMessage: "HEVC export was cancelled.",
+        exportUnknownErrorCode: "hevc_export_unknown",
+        exportUnknownFallbackMessage: "HEVC export failed with unknown status.",
+        codecValidationErrorCode: "hevc_codec_invalid",
         resolve: resolve,
         reject: reject
       )
@@ -79,18 +127,25 @@ class MOVExporter: NSObject {
 
   private func exportAssetToMov(
     asset: AVAsset,
-    requestedPresetName: String,
+    presetCandidates: [String],
+    expectedVideoCodec: CMVideoCodecType?,
+    noCompatiblePresetErrorCode: String,
+    noCompatiblePresetErrorMessage: String,
+    exportFailedErrorCode: String,
+    exportFailedFallbackMessage: String,
+    exportCancelledErrorCode: String,
+    exportCancelledMessage: String,
+    exportUnknownErrorCode: String,
+    exportUnknownFallbackMessage: String,
+    codecValidationErrorCode: String,
     resolve: @escaping RCTPromiseResolveBlock,
     reject: @escaping RCTPromiseRejectBlock
   ) {
     let compatiblePresets = AVAssetExportSession.exportPresets(compatibleWith: asset)
-    let selectedPresetName = selectPreset(
-      requestedPresetName: requestedPresetName,
-      compatiblePresets: compatiblePresets
-    )
+    let selectedPresetName = presetCandidates.first { compatiblePresets.contains($0) }
 
     guard let selectedPresetName else {
-      reject("preset_unavailable", "No compatible export preset was found for this video.", nil)
+      reject(noCompatiblePresetErrorCode, noCompatiblePresetErrorMessage, nil)
       return
     }
 
@@ -129,11 +184,14 @@ class MOVExporter: NSObject {
       case .completed:
         do {
           try self.verifyQuickTimeContainer(at: outputURL)
+          if let expectedVideoCodec {
+            try self.verifyVideoCodec(at: outputURL, expectedCodec: expectedVideoCodec)
+          }
         } catch {
           DispatchQueue.main.async {
             reject(
-              "mov_container_invalid",
-              "Exported file is not a QuickTime MOV container.",
+              codecValidationErrorCode,
+              "Exported file does not match expected MOV/codec format.",
               error
             )
           }
@@ -146,20 +204,20 @@ class MOVExporter: NSObject {
       case .failed:
         DispatchQueue.main.async {
           reject(
-            "mov_export_failed",
-            exportSession.error?.localizedDescription ?? "MOV export failed.",
+            exportFailedErrorCode,
+            exportSession.error?.localizedDescription ?? exportFailedFallbackMessage,
             exportSession.error
           )
         }
       case .cancelled:
         DispatchQueue.main.async {
-          reject("mov_export_cancelled", "MOV export was cancelled.", nil)
+          reject(exportCancelledErrorCode, exportCancelledMessage, nil)
         }
       default:
         DispatchQueue.main.async {
           reject(
-            "mov_export_unknown",
-            exportSession.error?.localizedDescription ?? "MOV export failed with unknown status.",
+            exportUnknownErrorCode,
+            exportSession.error?.localizedDescription ?? exportUnknownFallbackMessage,
             exportSession.error
           )
         }
@@ -167,10 +225,7 @@ class MOVExporter: NSObject {
     }
   }
 
-  private func selectPreset(
-    requestedPresetName: String,
-    compatiblePresets: [String]
-  ) -> String? {
+  private func movPresetCandidates(requestedPresetName: String) -> [String] {
     let candidates = [
       requestedPresetName,
       AVAssetExportPresetMediumQuality,
@@ -179,11 +234,31 @@ class MOVExporter: NSObject {
       AVAssetExportPreset640x480,
     ]
 
-    for candidate in candidates where compatiblePresets.contains(candidate) {
-      return candidate
+    return uniquePresetNames(candidates)
+  }
+
+  @available(iOS 11.0, *)
+  private func hevcPresetCandidates(requestedPresetName: String) -> [String] {
+    let candidates = [
+      requestedPresetName,
+      AVAssetExportPresetHEVCHighestQuality,
+      AVAssetExportPresetHEVC3840x2160,
+      AVAssetExportPresetHEVC1920x1080,
+    ]
+
+    return uniquePresetNames(candidates)
+  }
+
+  private func uniquePresetNames(_ presets: [String]) -> [String] {
+    var seen = Set<String>()
+    var orderedUnique: [String] = []
+
+    for preset in presets where !seen.contains(preset) {
+      seen.insert(preset)
+      orderedUnique.append(preset)
     }
 
-    return nil
+    return orderedUnique
   }
 
   private static func makeFileURL(from sourceUri: String) -> URL? {
@@ -240,5 +315,35 @@ class MOVExporter: NSObject {
         userInfo: [NSLocalizedDescriptionKey: "Output major brand is not QuickTime."]
       )
     }
+  }
+
+  private func verifyVideoCodec(at fileURL: URL, expectedCodec: CMVideoCodecType) throws {
+    let outputAsset = AVURLAsset(url: fileURL)
+    guard let videoTrack = outputAsset.tracks(withMediaType: .video).first else {
+      throw NSError(
+        domain: "MOVExporter",
+        code: 5,
+        userInfo: [NSLocalizedDescriptionKey: "Exported MOV does not contain a video track."]
+      )
+    }
+
+    for formatDescription in videoTrack.formatDescriptions {
+      let descriptionRef = formatDescription as CFTypeRef
+      guard CFGetTypeID(descriptionRef) == CMFormatDescriptionGetTypeID() else {
+        continue
+      }
+
+      let description = unsafeBitCast(descriptionRef, to: CMFormatDescription.self)
+
+      if CMFormatDescriptionGetMediaSubType(description) == expectedCodec {
+        return
+      }
+    }
+
+    throw NSError(
+      domain: "MOVExporter",
+      code: 6,
+      userInfo: [NSLocalizedDescriptionKey: "Exported MOV does not use the requested codec."]
+    )
   }
 }

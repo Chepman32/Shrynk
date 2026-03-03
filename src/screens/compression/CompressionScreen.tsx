@@ -39,6 +39,12 @@ const FORMAT_OPTIONS: { value: VideoFormat; label: string; description: string; 
     description: Platform.OS === 'ios' ? 'Matroska (saved in app)' : 'Matroska',
     supported: true,
   },
+  {
+    value: 'hevc',
+    label: 'HEVC',
+    description: Platform.OS === 'ios' ? 'HEVC (H.265 in MOV)' : 'iOS only',
+    supported: Platform.OS === 'ios',
+  },
 ];
 
 const RESOLUTION_OPTIONS: { value: Resolution; label: string }[] = [
@@ -61,11 +67,13 @@ const FORMAT_SIZE_FACTORS: Record<VideoFormat, number> = {
   mp4: 0.85,
   mov: 1.1,
   mkv: 0.95,
+  hevc: 0.8,
 };
 
 type MovExporterModule = {
   exportToMov: (sourceUri: string) => Promise<string>;
   compressToMov: (sourceUri: string, presetName: string) => Promise<string>;
+  compressToHevcMov?: (sourceUri: string, presetName: string) => Promise<string>;
 };
 
 type FFmpegSessionLike = {
@@ -110,6 +118,12 @@ const IOS_MOV_COMPRESSION_FALLBACK_PRESETS = [
 
 const IOS_MOV_MIN_SIZE_REDUCTION_FACTOR = 0.99;
 const MATROSKA_HEADER_BASE64 = 'GkXfow==';
+const OUTPUT_EXTENSION_BY_FORMAT: Record<VideoFormat, string> = {
+  mp4: 'mp4',
+  mov: 'mov',
+  mkv: 'mkv',
+  hevc: 'mov',
+};
 
 const isMatroskaFile = async (absolutePath: string): Promise<boolean> => {
   try {
@@ -197,6 +211,11 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
       return;
     }
 
+    if (format === 'hevc' && Platform.OS !== 'ios') {
+      Alert.alert('Not Supported Yet', 'HEVC export is currently available on iOS only.');
+      return;
+    }
+
     const ensureAndroidGalleryPermission = async () => {
       if (Platform.OS !== 'android') {
         return true;
@@ -244,11 +263,13 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
       ) => Promise<
         string | { node?: { image?: { uri?: string } } }
       >;
-      let compressVideo: (
-        uri: string,
-        options: Record<string, unknown>,
-        onProgress?: (progress: number) => void
-      ) => Promise<string>;
+      let compressVideo:
+        | ((
+          uri: string,
+          options: Record<string, unknown>,
+          onProgress?: (progress: number) => void
+        ) => Promise<string>)
+        | undefined;
       let ffmpegExecuteWithArguments:
         | ((commandArguments: string[]) => Promise<FFmpegSessionLike>)
         | undefined;
@@ -289,7 +310,7 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
           compressVideo = compressorModule.Video.compress;
         }
 
-        if (format === 'mkv') {
+        if (format === 'mkv' || format === 'hevc') {
           const ffmpegKitModule = require('ffmpeg-kit-react-native') as FFmpegKitModule;
 
           if (
@@ -312,6 +333,7 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
       let outputUri: string;
       const shouldUseIOSMovNativePath = Platform.OS === 'ios' && format === 'mov';
       const shouldUseMKVPath = format === 'mkv';
+      const shouldUseHEVCPath = Platform.OS === 'ios' && format === 'hevc';
       if (shouldUseIOSMovNativePath) {
         if (!MOVExporter?.compressToMov) {
           throw new Error(
@@ -452,7 +474,110 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
 
         outputUri = toFileUri(mkvTempPath);
         setConversionProgress(0.85);
+      } else if (shouldUseHEVCPath) {
+        if (!compressVideo || !ffmpegExecuteWithArguments || !isFFmpegReturnCodeSuccess) {
+          throw new Error('HEVC exporter is unavailable in this app build. Rebuild the app and try again.');
+        }
+
+        const compressedRawPath = await compressVideo(
+          videoUri,
+          {
+            compressionMethod: 'auto',
+            maxSize,
+            bitrate: undefined,
+            minimumFileSizeForCompress: 0,
+          },
+          (progress: number) => {
+            setConversionProgress(Math.min(0.6, Math.max(0, progress * 0.6)));
+          }
+        );
+
+        compressedUri = toFileUri(compressedRawPath);
+        setConversionProgress(0.7);
+
+        const compressedPath = toAbsolutePath(compressedUri);
+        const hevcMovPath = `${RNFS.TemporaryDirectoryPath}shrynk_hevc_${videoId}_${Date.now()}.mov`;
+
+        if (await RNFS.exists(hevcMovPath)) {
+          await RNFS.unlink(hevcMovPath);
+        }
+
+        const hevcBaseArguments = [
+          '-y',
+          '-i',
+          compressedPath,
+          '-map',
+          '0:v:0',
+          '-map',
+          '0:a?',
+          '-tag:v',
+          'hvc1',
+          '-movflags',
+          '+faststart',
+        ];
+
+        const videotoolboxSession = await ffmpegExecuteWithArguments([
+          ...hevcBaseArguments,
+          '-c:v',
+          'hevc_videotoolbox',
+          '-allow_sw',
+          '1',
+          '-b:v',
+          '0',
+          '-c:a',
+          'aac',
+          '-b:a',
+          '128k',
+          hevcMovPath,
+        ]);
+
+        const videotoolboxReturnCode = await videotoolboxSession.getReturnCode();
+        if (!isFFmpegReturnCodeSuccess(videotoolboxReturnCode)) {
+          const x265Session = await ffmpegExecuteWithArguments([
+            ...hevcBaseArguments,
+            '-c:v',
+            'libx265',
+            '-crf',
+            '28',
+            '-preset',
+            'medium',
+            '-c:a',
+            'aac',
+            '-b:a',
+            '128k',
+            hevcMovPath,
+          ]);
+
+          const x265ReturnCode = await x265Session.getReturnCode();
+          if (!isFFmpegReturnCodeSuccess(x265ReturnCode)) {
+            const videotoolboxOutput = await videotoolboxSession.getOutput();
+            const x265Output = await x265Session.getOutput();
+            throw new Error(
+              [
+                'HEVC export failed on this device.',
+                videotoolboxOutput?.trim() ? `videotoolbox: ${videotoolboxOutput}` : '',
+                x265Output?.trim() ? `libx265: ${x265Output}` : '',
+              ]
+                .filter(Boolean)
+                .join('\n')
+            );
+          }
+        }
+
+        const hevcMovUri = toFileUri(hevcMovPath);
+        const hevcOutputPath = toAbsolutePath(hevcMovUri);
+
+        if (!hevcOutputPath.toLowerCase().endsWith('.mov')) {
+          throw new Error('HEVC export produced an invalid output file type.');
+        }
+
+        outputUri = hevcMovUri;
+        setConversionProgress(0.85);
       } else {
+        if (!compressVideo) {
+          throw new Error('Video compressor module is unavailable in this app build. Rebuild the app and try again.');
+        }
+
         const compressedRawPath = await compressVideo(
           videoUri,
           {
@@ -471,7 +596,8 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
 
       const sourceName = selectedVideoName;
       const normalizedName = sourceName.replace(/\.[^/.]+$/, '');
-      const fileName = `${normalizedName}_${videoId}.${format}`;
+      const outputExtension = OUTPUT_EXTENSION_BY_FORMAT[format];
+      const fileName = `${normalizedName}_${videoId}.${outputExtension}`;
 
       await RNFS.mkdir(APP_COMPRESSED_DIR);
       const persistentOutputPath = `${APP_COMPRESSED_DIR}/${fileName}`;
@@ -484,14 +610,80 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
       const persistentOutputUri = toFileUri(persistentOutputPath);
 
       let savedToGallery = false;
-      if (format !== 'mkv' || Platform.OS === 'android') {
-        try {
-          await saveVideo(persistentOutputUri, { type: 'video' });
-          savedToGallery = true;
-        } catch (saveError) {
-          if (format !== 'mkv') {
-            throw saveError;
+      let mkvGalleryFallbackUsed = false;
+      try {
+        await saveVideo(persistentOutputUri, { type: 'video' });
+        savedToGallery = true;
+      } catch (saveError) {
+        const shouldUseIOSMkvGalleryFallback = format === 'mkv' && Platform.OS === 'ios';
+        if (!shouldUseIOSMkvGalleryFallback) {
+          throw saveError;
+        }
+
+        if (!ffmpegExecuteWithArguments || !isFFmpegReturnCodeSuccess) {
+          throw new Error('MKV gallery fallback is unavailable in this app build.');
+        }
+
+        const galleryMovPath = `${RNFS.TemporaryDirectoryPath}shrynk_gallery_${videoId}_${Date.now()}.mov`;
+        if (await RNFS.exists(galleryMovPath)) {
+          await RNFS.unlink(galleryMovPath);
+        }
+
+        const remuxSession = await ffmpegExecuteWithArguments([
+          '-y',
+          '-i',
+          persistentOutputPath,
+          '-map',
+          '0',
+          '-c',
+          'copy',
+          '-movflags',
+          '+faststart',
+          galleryMovPath,
+        ]);
+
+        const remuxReturnCode = await remuxSession.getReturnCode();
+        if (!isFFmpegReturnCodeSuccess(remuxReturnCode)) {
+          if (await RNFS.exists(galleryMovPath)) {
+            await RNFS.unlink(galleryMovPath);
           }
+
+          const transcodeSession = await ffmpegExecuteWithArguments([
+            '-y',
+            '-i',
+            persistentOutputPath,
+            '-map',
+            '0:v:0',
+            '-map',
+            '0:a?',
+            '-c:v',
+            'h264_videotoolbox',
+            '-c:a',
+            'aac',
+            '-b:a',
+            '128k',
+            '-movflags',
+            '+faststart',
+            galleryMovPath,
+          ]);
+
+          const transcodeReturnCode = await transcodeSession.getReturnCode();
+          if (!isFFmpegReturnCodeSuccess(transcodeReturnCode)) {
+            const sessionOutput = await transcodeSession.getOutput();
+            throw new Error(
+              sessionOutput?.trim()
+                ? `Could not save MKV to gallery: ${sessionOutput}`
+                : 'Could not save MKV to gallery on this device.'
+            );
+          }
+        }
+
+        await saveVideo(toFileUri(galleryMovPath), { type: 'video' });
+        savedToGallery = true;
+        mkvGalleryFallbackUsed = true;
+
+        if (await RNFS.exists(galleryMovPath)) {
+          await RNFS.unlink(galleryMovPath);
         }
       }
 
@@ -513,6 +705,7 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
 
       const originalSize = originalSizeBytes || compressedSize;
       const ratio = originalSize > 0 ? compressedSize / originalSize : 1;
+      const outputCodec = format === 'hevc' ? 'h265' : 'h264';
 
       addHistoryRecord({
         originalUri: videoUri,
@@ -526,7 +719,7 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
           quality: 'medium',
           resolution,
           format,
-          codec: 'h264',
+          codec: outputCodec,
         },
         status: 'completed',
       });
@@ -538,8 +731,12 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
           ? `Saved to gallery as .MOV (container).\nCodec may display as H.264.\nOutput size: ${formatBytes(compressedSize)}`
           : format === 'mkv'
             ? savedToGallery
-              ? `Saved to gallery as .MKV (container).\nCodec may display as H.264.\nOutput size: ${formatBytes(compressedSize)}`
+              ? mkvGalleryFallbackUsed
+                ? `MKV saved in app storage.\nGallery received a .MOV copy for iOS compatibility.\nOutput size: ${formatBytes(compressedSize)}`
+                : `Saved to gallery as .MKV (container).\nCodec may display as H.264.\nOutput size: ${formatBytes(compressedSize)}`
               : `MKV export complete.\nSaved in app storage as .MKV.\nOutput size: ${formatBytes(compressedSize)}`
+            : format === 'hevc'
+              ? `Saved to gallery as HEVC (H.265) in .MOV.\nOutput size: ${formatBytes(compressedSize)}`
             : `Saved to gallery.\nOutput size: ${formatBytes(compressedSize)}`
       );
       navigation.goBack();
