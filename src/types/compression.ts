@@ -1,5 +1,6 @@
 export type QualityLevel = 'low' | 'medium' | 'high' | 'maximum';
 export type Resolution = '480p' | '720p' | '1080p' | '4k' | 'original';
+export type VideoFormat = 'mp4' | 'mov' | 'mkv';
 export type VideoCodec = 'h264' | 'h265';
 export type EncodingSpeed = 'ultrafast' | 'fast' | 'medium' | 'slow';
 export type CompressionStatus = 'pending' | 'processing' | 'completed' | 'error';
@@ -7,6 +8,8 @@ export type CompressionStatus = 'pending' | 'processing' | 'completed' | 'error'
 export interface CompressionOptions {
   quality: QualityLevel;
   resolution?: Resolution;
+  format?: VideoFormat;
+  targetSizeMb?: number;
   codec: VideoCodec;
   fps?: number;
   targetBitrate?: number;

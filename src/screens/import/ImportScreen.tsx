@@ -1,39 +1,87 @@
 import React from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity, Alert, InteractionManager } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { Icon } from '../../components/common/Icon';
 import { colors, spacing, textStyles, layout } from '../../theme';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { HomeStackParamList } from '../../types/navigation';
+import type { CompositeScreenProps } from '@react-navigation/native';
+import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import type { MainTabParamList, RootStackParamList } from '../../types/navigation';
+import { navigateToCompression, navigationRef } from '../../navigation/navigationRef';
 
-type Props = NativeStackScreenProps<HomeStackParamList, 'Import'>;
+type Props = CompositeScreenProps<
+  NativeStackScreenProps<HomeStackParamList, 'Import'>,
+  CompositeScreenProps<
+    BottomTabScreenProps<MainTabParamList>,
+    NativeStackScreenProps<RootStackParamList>
+  >
+>;
 
 export const ImportScreen: React.FC<Props> = ({ navigation }) => {
-  
+  const navigateToCompression = (params: RootStackParamList['Compression']) => {
+    if (!navigationRef.isReady()) {
+      Alert.alert('Error', 'Unable to open conversion settings');
+      return;
+    }
+
+    // Avoid iOS picker/modal transition race by closing Import first,
+    // then navigating once interactions are settled.
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    }
+
+    InteractionManager.runAfterInteractions(() => {
+      setTimeout(() => {
+        const didNavigate = navigateToCompression(params);
+        if (!didNavigate) {
+          Alert.alert('Error', 'Unable to open conversion settings');
+        }
+      }, 100);
+    });
+  };
+
   const handleImportFromGallery = async () => {
     try {
       const result = await launchImageLibrary({
         mediaType: 'video',
         selectionLimit: 1, // Only allow 1 video
       });
-      
-      if (result.assets && result.assets.length > 0) {
-        // Automatically import and navigate back
-        navigation.goBack();
-        setTimeout(() => {
-          Alert.alert('Success', 'Video imported successfully');
-        }, 300);
+
+      if (result.didCancel) {
+        return;
       }
+
+      if (result.errorCode) {
+        Alert.alert('Error', result.errorMessage ?? 'Failed to import video');
+        return;
+      }
+
+      const video = result.assets?.[0];
+
+      if (!video?.uri) {
+        Alert.alert('Error', 'Selected video is unavailable');
+        return;
+      }
+
+      const videoId = `video_${Date.now()}`;
+      const compressionParams = {
+        videoUri: video.uri,
+        videoId,
+      };
+
+      navigateToCompression(compressionParams);
     } catch (error) {
+      console.error('Import error:', error);
       Alert.alert('Error', 'Failed to import video');
     }
   };
-  
+
   const handleImportFromFiles = () => {
     Alert.alert('Coming Soon', 'Files import will be available soon');
   };
-  
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
@@ -41,14 +89,14 @@ export const ImportScreen: React.FC<Props> = ({ navigation }) => {
           <Icon name="chevron-left" set="Feather" size={24} color={colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Import</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.headerSpacer} />
       </View>
-      
+
       <View style={styles.content}>
         <View style={styles.sourceContainer}>
           <Text style={styles.sectionTitle}>Import From</Text>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.sourceButton}
             onPress={handleImportFromGallery}
           >
@@ -57,8 +105,8 @@ export const ImportScreen: React.FC<Props> = ({ navigation }) => {
             </View>
             <Text style={styles.sourceLabel}>Photo Library</Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.sourceButton}
             onPress={handleImportFromFiles}
           >
@@ -88,6 +136,9 @@ const styles = StyleSheet.create({
   headerTitle: {
     ...textStyles.headingMedium,
     color: colors.text.primary,
+  },
+  headerSpacer: {
+    width: 24,
   },
   content: {
     flex: 1,

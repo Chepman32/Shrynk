@@ -8,6 +8,7 @@ import { PreviewScreen } from '../screens/preview/PreviewScreen';
 import { ExportScreen } from '../screens/export/ExportScreen';
 import { colors } from '../theme';
 import type { RootStackParamList } from '../types/navigation';
+import { navigationRef } from './navigationRef';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -25,7 +26,7 @@ const navigationTheme = {
 
 export const RootNavigator: React.FC = () => {
   return (
-    <NavigationContainer theme={navigationTheme}>
+    <NavigationContainer ref={navigationRef} theme={navigationTheme}>
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
@@ -46,6 +47,7 @@ export const RootNavigator: React.FC = () => {
         <Stack.Screen
           name="Compression"
           component={CompressionScreen}
+          options={{ headerShown: true, title: 'Conversion Params' }}
         />
         <Stack.Screen
           name="Preview"
