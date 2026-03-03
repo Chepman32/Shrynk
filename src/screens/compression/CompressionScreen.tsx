@@ -27,6 +27,7 @@ import type { RootStackParamList } from '../../types/navigation';
 import type { Resolution, VideoFormat } from '../../types/compression';
 import { formatBytes } from '../../utils/formatters';
 import { useHistoryStore } from '../../store/useHistoryStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Compression'>;
 
@@ -142,9 +143,14 @@ const isMatroskaFile = async (absolutePath: string): Promise<boolean> => {
 export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
   const { videoUri, videoId, originalSizeBytes } = route.params;
   const addHistoryRecord = useHistoryStore(state => state.addRecord);
+  const { defaultFormat, defaultResolution, updateSettings } = useSettingsStore();
 
-  const [format, setFormat] = useState<VideoFormat>('mp4');
-  const [resolution, setResolution] = useState<Resolution>('original');
+  const [format, setFormat] = useState<VideoFormat>(
+    (defaultFormat as VideoFormat) || 'mp4'
+  );
+  const [resolution, setResolution] = useState<Resolution>(
+    (defaultResolution as Resolution) || 'original'
+  );
   const [isConverting, setIsConverting] = useState(false);
   const [conversionProgress, setConversionProgress] = useState(0);
 
@@ -190,6 +196,7 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
   const handleChipPress = useCallback(
     (value: Resolution) => {
       setResolution(value);
+      updateSettings({ defaultResolution: value });
       const layout = chipLayouts.current[value];
       if (layout) {
         chipX.value = withSpring(layout.x, springConfig);
@@ -845,6 +852,7 @@ export const CompressionScreen: React.FC<Props> = ({ navigation, route }) => {
                     return;
                   }
                   setFormat(option.value);
+                  updateSettings({ defaultFormat: option.value });
                 }}
               >
                 <View style={styles.listOptionContent}>

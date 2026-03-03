@@ -18,6 +18,7 @@ export interface AppSettings {
   defaultQuality: string;
   defaultResolution: string;
   defaultCodec: string;
+  defaultFormat: string;
   preserveMetadata: boolean;
   hardwareAcceleration: boolean;
   autoDeleteOriginal: boolean;
